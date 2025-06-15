@@ -20,7 +20,7 @@ void Overseer::SetBoard() {
 			}
 		}
 	}
-	
+
 	for (int x = 0; x < BOARDSIZE; x++) {
 		board[x][1].SetTile(PAWN, BLACK);
 		board[x][BOARDSIZE - 2].SetTile(PAWN, WHITE);
@@ -77,7 +77,7 @@ void Overseer::DisplayMessage(HWND hWnd, HDC hdc, HINSTANCE hInst) {
 	RECT window;
 	GetWindowRect(hWnd, &window);
 	TextOut(hdc, (window.right - window.left) / 2 - TILESIZE, 30, "                                                                                                   ", 100);
-	TextOut(hdc, (window.right - window.left)/ 2 - TILESIZE, 30, msgTurn, lstrlen(msgTurn));
+	TextOut(hdc, (window.right - window.left) / 2 - TILESIZE, 30, msgTurn, lstrlen(msgTurn));
 	TextOut(hdc, 0, 0, "                                                                                                   ", 100);
 	TextOut(hdc, 0, 0, msgPlayer, lstrlen(msgPlayer));
 }
@@ -128,7 +128,7 @@ void Overseer::DrawBoard(HWND hWnd, HDC hdc, HINSTANCE hInst) {
 				else {
 					offsetY = 1 * BMPSIZE;
 				}
-				BitBlt(hdc, x + (TILESIZE-BMPSIZE) / 2, y + (TILESIZE - BMPSIZE) / 2,
+				BitBlt(hdc, x + (TILESIZE - BMPSIZE) / 2, y + (TILESIZE - BMPSIZE) / 2,
 					BMPSIZE, BMPSIZE, MemDC,
 					offsetX, offsetY, SRCCOPY);
 			}
@@ -140,7 +140,7 @@ void Overseer::DrawBoard(HWND hWnd, HDC hdc, HINSTANCE hInst) {
 			}
 		}
 		black = !black;
-		TextOut(hdc, startH - 30, y + 30, 
+		TextOut(hdc, startH - 30, y + 30,
 			text[0][boardY], 1);
 		TextOut(hdc, startH + BOARDSIZE * TILESIZE + 30, y + 30,
 			text[0][boardY], 1);
@@ -162,28 +162,122 @@ void Overseer::OnLBclick(HWND hWnd) {
 	InvalidateRect(hWnd, 0, 0);
 }
 
-void Overseer::PickTile(POINT coord) {}
-
-bool Overseer::MakeTurn(POINT coord) {
-	return 0;
+void Overseer::PickTile(POINT coord) {
+	if (selectTile.x < 0) {
+		if (board[coord.x][coord.y].GetColor() == playerTurn) {
+			selectTile = coord;
+			msgPlayer = "Piece selected";
+		}
+		else {
+			msgPlayer = "Can't move opponent's pieces";
+		}
+	}
+	else if (coord.x == selectTile.x && coord.y == selectTile.y) {
+		selectTile = { -1, -1 };
+		msgPlayer = "Piece unselected";
+	}
+	else {
+		MakeTurn(coord);
+	}
 }
 
-void Overseer::ManageThreat() {}
+bool Overseer::MakeTurn(POINT coord) {
+	if (board[selectTile.x][selectTile.y].IsMoveAllowed(board, &board[coord.x][coord.y])) {
+		Tile mem_tile = board[selectTile.x][selectTile.y];
+		Tile mem_dest = board[coord.x][coord.y];
+		board[selectTile.x][selectTile.y].MovePiece(&board[coord.x][coord.y]);
+		ManageThreat();
+		Tile* king_tile = FindKing(playerTurn);
+		if (king_tile->GetThreat(1 - king_tile->GetColor())) {
+			board[selectTile.x][selectTile.y] = mem_tile;
+			board[coord.x][coord.y] = mem_dest;
+			msgPlayer = "This move leaves you in check!";
+			return false;
+		}
+		selectTile = { -1, -1 };
+		GameLoop();
+	}
+	else {
+		msgPlayer = "This piece cannot move that way";
+	}
+	return false;
+}
+
+void Overseer::ManageThreat() {
+	for (int y = 0; y < BOARDSIZE; y++) {
+		for (int x = 0; x < BOARDSIZE; x++) {
+			board[x][y].SetThreat(false, 0);
+			board[x][y].SetThreat(false, 1);
+			board[x][y].SetThreat(false, 2);
+		}
+	}
+	for (int y = 0; y < BOARDSIZE; y++) {
+		for (int x = 0; x < BOARDSIZE; x++) {
+			if (board[x][y].GetColor() != NONE) {
+				board[x][y].SpreadThreat(board);
+			}
+		}
+	}
+}
 
 int Overseer::Checkmate() {
-	return 0;
+	bool keep_playing = false;
+	Tile* king_tile;
+	for (int y1 = 0; y1 < BOARDSIZE; y1++) {
+		for (int x1 = 0; x1 < BOARDSIZE; x1++) {
+			if (board[x1][y1].GetColor() == playerTurn) {
+				for (int y2 = 0; y2 < BOARDSIZE; y2++) {
+					for (int x2 = 0; x2 < BOARDSIZE; x2++) {
+						if (!board[x1][y1].IsMoveAllowed(board, &board[x2][y2])) {
+							continue;
+						}
+						Tile mem_tile = board[x1][y1];
+						Tile mem_dest = board[x2][y2];
+						board[x1][y1].MovePiece(&board[x2][y2]);
+						ManageThreat();
+						king_tile = FindKing(playerTurn);
+						if (!king_tile->GetThreat(1 - king_tile->GetColor())) {
+							keep_playing = true;
+						}
+						board[x1][y1] = mem_tile;
+						board[x2][y2] = mem_dest;
+						if (keep_playing) {
+							return 0;
+						}
+					}
+				}
+			}
+		}
+	}
+	king_tile = FindKing(playerTurn);
+	if (king_tile->GetThreat(1 - king_tile->GetColor())) {
+		msgPlayer = "CHECKMATE!";
+		return 1;
+	}
+	else {
+		msgPlayer = "DRAW!";
+		return 2;
+	}
 }
 
 Tile* Overseer::FindKing(int clr) {
+	for (int y = 0; y < BOARDSIZE; y++) { //find king
+		for (int x = 0; x < BOARDSIZE; x++) {
+			if (board[x][y].GetFigure() == KING &&
+				board[x][y].GetColor() == clr) {
+				return &board[x][y];
+			}
+		}
+	}
 	return nullptr;
 }
 
 void Overseer::ResetGame(WPARAM wParam) {
 	if (key_input) {
 		switch (wParam) {
-			case 'R':
-				SetGame();
-				break;
+		case 'R':
+			SetGame();
+			break;
 		}
 	}
 }
