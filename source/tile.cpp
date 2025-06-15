@@ -111,7 +111,7 @@ void Tile::SpreadThreat(Tile board[][BOARDSIZE]) {
             board[coord.x - 1][coord.y - 2].SetThreat(true, clr + 1);
         break;
     case PAWN:
-        if (coord.y - clr) {
+        if (coord.y - clr >= 0 && coord.y - clr < BOARDSIZE) {
             if (coord.x - 1 >= 0)
                 board[coord.x - 1][coord.y - clr].SetThreat(true, clr + 1);
             if (coord.x + 1 < BOARDSIZE)
